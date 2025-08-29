@@ -1,7 +1,7 @@
 {
 	"mcpServers": {
-		"todo-list": {
-			"url": "http://localhost:8788/sse"
+		"mcp-template": {
+			"source": "github:null-shot/typescript-mcp-template"
 		}
 	}
 }

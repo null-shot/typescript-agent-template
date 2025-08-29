@@ -1,21 +1,36 @@
 {
-  "name": "agent-starter",
-  "version": "0.0.0",
+  "name": "agent-template",
+  "version": "0.1.0",
   "private": true,
   "scripts": {
+    "build": "tsc --noEmit && wrangler deploy --dry-run",
     "deploy": "wrangler deploy",
-    "dev": "wrangler dev",
+    "dev": "nullshot dev",
     "start": "wrangler dev",
-    "cf-typegen": "wrangler types"
+    "cf-typegen": "wrangler types",
+    "preinstall": "nullshot install"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^1.2.12",
-    "@xava-labs/agent": "^0.2.0",
-    "ai": "^4.3.16",
-    "hono": "^4.7.11"
+    "@ai-sdk/anthropic": "^2.0.9",
+    "@nullshot/agent": "^0.3.4",
+    "ai": "^5.0.27",
+    "hono": "^4.7.11",
+    "mcp-template": "github:null-shot/typescript-mcp-template"
   },
   "devDependencies": {
-    "typescript": "^5.5.2",
-    "wrangler": "^4.18.0"
+    "@nullshot/cli": "^0.2.5",
+    "@types/node": "^24.3.0",
+    "typescript": "^5.8.3",
+    "wrangler": "^4.32.0"
+  },
+  "packageManager": "pnpm@10.12.4+sha512.5ea8b0deed94ed68691c9bad4c955492705c5eeb8a87ef86bc62c74a26b037b08ff9570f108b2e4dbd1dd1a9186fea925e527f141c648e85af45631074680184",
+  "mcpServers": {
+    "mcp-template": {
+      "source": "github:null-shot/typescript-mcp-template",
+      "installedAt": "2025-08-29T00:25:33.938Z",
+      "packageName": "mcp-template",
+      "hasWranglerConfig": true,
+      "serviceName": "mcp"
+    }
   }
 }

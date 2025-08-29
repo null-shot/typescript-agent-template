@@ -1,16 +1,17 @@
 # Agent Starter Template
 
-A Cloudflare Workers-based conversational AI agent template built with Hono, Anthropic's Claude, and the Xava Labs Agent SDK. This template provides a production-ready foundation for building scalable AI agents that can handle multiple concurrent conversations with session management.
+A Cloudflare Workers-based conversational AI agent template built with Hono, AI SDK v5, and the Nullshot Agent SDK. This template provides a production-ready foundation for building scalable AI agents that can handle multiple concurrent conversations with session management.
 
 ## Features
 
 - 🚀 **Cloudflare Workers**: Serverless deployment with global edge distribution
-- 🧠 **Anthropic Claude Integration**: Powered by Claude 3 Haiku for intelligent conversations
+- 🧠 **AI SDK v5 Integration**: Powered by Vercel's AI SDK with multi-provider support (Anthropic, OpenAI, etc.)
 - 💬 **Session Management**: Persistent conversations using Cloudflare Durable Objects
-- 🔄 **Streaming Responses**: Real-time response streaming for better user experience
+- 🔄 **Streaming Responses**: Real-time response streaming with tool call streaming support
 - 🌐 **CORS Enabled**: Ready for web applications with proper CORS configuration
 - 🛠️ **MCP Tools Ready**: Extensible with Model Context Protocol (MCP) tools
 - 📦 **TypeScript**: Full type safety and excellent developer experience
+- ⚡ **Multi-Step Reasoning**: Support for complex reasoning workflows with maxSteps configuration
 
 ## Architecture
 
@@ -30,28 +31,45 @@ The agent uses Cloudflare Durable Objects to maintain conversation state across 
 
 ### Installation
 
-1. **Clone and install dependencies:**
+1. **Import this repository into your folder:**
 
    ```bash
-   git clone <your-repo-url>
-   cd agent-starter
-   pnpm install
+   npx @nullshot/cli create agent
    ```
 
 2. **Set up environment variables:**
 
    ```bash
-   # Add your Anthropic API key to Cloudflare Workers secrets
-   npx wrangler secret put ANTHROPIC_API_KEY
+   # Setup local env vars / secrets (update the API key for your AI provider)
+   cp .vars-example .dev.vars
+   # Add your AI provider API key to Cloudflare Workers secrets for the cloud (you will be prompted for the value)
+   npx wrangler secret put AI_PROVIDER_API_KEY 
    ```
 
-3. **Start development server:**
+3. **(Optional) Update any MCP dependencies your agent relies on:**
+   
+   3a. Update the `mcp.json` file with GitHub repos or URLs. By default we depend on the MCP Template as an example:
+   ```json
+   {
+     "mcpServers": {
+       "mcp-template": {
+         "source": "github:null-shot/typescript-mcp-template"
+       }
+     }
+   }
+   ```
+   
+   3b. Run `pnpm install` which will automatically run nullshot install via the preinstall hook
+
+4. **Start development server:**
 
    ```bash
+   # Starts up the agent with all of its dependent MCP servers, including automatically running wrangler migrations
    pnpm dev
    ```
 
-4. **Deploy to production:**
+   NOTE: When you start the app - wrangler will say the MCP services are (Not Connected) but in reality they are and its a race bug condition with wrangler.
+5. **Deploy to production: (Only deploys the agent, not its dependencies at this time)**
    ```bash
    pnpm deploy
    ```
@@ -230,8 +248,41 @@ export function useAgent(baseUrl: string) {
 
 Configure these in your `wrangler.jsonc` or as Cloudflare Workers secrets:
 
-- `ANTHROPIC_API_KEY`: Your Anthropic API key (secret)
-- `AI_PROVIDER`: Set to "anthropic" (configured in wrangler.jsonc)
+- `AI_PROVIDER_API_KEY`: Your AI provider API key (secret) - supports Anthropic, OpenAI, etc.
+- `AI_PROVIDER`: Set to "anthropic" or your preferred provider (configured in wrangler.jsonc)
+- `MODEL_ID`: The specific model to use (e.g., "claude-3-haiku-20240307", "claude-3-sonnet-20241022", etc.)
+
+### AI Provider Support
+
+The template supports multiple AI providers through AI SDK v5:
+
+**Anthropic (Default):**
+```typescript
+// Environment variables
+AI_PROVIDER=anthropic
+MODEL_ID=claude-3-haiku-20240307
+AI_PROVIDER_API_KEY=your_anthropic_key
+
+// In code - already configured in the template
+import { createAnthropic } from '@ai-sdk/anthropic';
+const provider = createAnthropic({ apiKey: env.AI_PROVIDER_API_KEY });
+const model = provider.languageModel(env.MODEL_ID);
+```
+
+**OpenAI:**
+```typescript
+// Environment variables  
+AI_PROVIDER=openai
+MODEL_ID=gpt-4
+AI_PROVIDER_API_KEY=your_openai_key
+
+// In code - modify the constructor in src/index.ts
+import { createOpenAI } from '@ai-sdk/openai';
+case "openai":
+  provider = createOpenAI({ apiKey: env.AI_PROVIDER_API_KEY });
+  model = provider.languageModel(env.MODEL_ID);
+  break;
+```
 
 ### Customizing the Agent
 
@@ -239,33 +290,56 @@ The agent behavior can be customized by modifying the `SimplePromptAgent` class 
 
 ```typescript
 async processMessage(sessionId: string, messages: AIUISDKMessage): Promise<Response> {
-  const result = await this.streamText(sessionId, {
-    model: this.model,
-    system: 'Your custom system prompt here', // Customize the agent's personality
-    messages: messages.messages,
-    maxSteps: 10, // Adjust reasoning steps
-    // Add tools, temperature, etc.
-  });
+  const result = await this.streamTextWithMessages(
+    sessionId,
+    messages.messages,
+    {
+      system: 'Your custom system prompt here', // Customize the agent's personality
+      maxSteps: 10, // Adjust reasoning steps
+      experimental_toolCallStreaming: true, // Enable tool streaming
+      onError: (error: unknown) => {
+        console.error("Error processing message", error);
+      },
+      // Add temperature, topP, etc. as needed
+    }
+  );
 
-  return result.toDataStreamResponse();
+  return result.toTextStreamResponse();
 }
 ```
 
 ### Adding MCP Tools
 
-Uncomment and configure MCP tools for extended capabilities:
+MCP tools are enabled by default. The configuration is managed through `mcp.json` and automatically loaded:
 
 ```typescript
-// In the constructor
-super(state, env, model, [
-  new ToolboxService(), // Uncomment to enable MCP toolbox
-]);
+// In the constructor - MCP tools are automatically loaded from mcp.json
+super(state, env, model, [new ToolboxService(env, mcpConfig)]);
 
-// In processMessage
-const result = await this.streamText(sessionId, {
-  // ... other options
-  experimental_toolCallStreaming: true, // Enable tool streaming
+// In processMessage - tool streaming is enabled by default
+const result = await this.streamTextWithMessages(sessionId, messages.messages, {
+  system: "Your system prompt",
+  maxSteps: 10,
+  experimental_toolCallStreaming: true, // Tool streaming enabled
+  onError: (error: unknown) => {
+    console.error("Error processing message", error);
+  },
 });
+```
+
+To add new MCP servers, update your `mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "mcp-template": {
+      "source": "github:null-shot/typescript-mcp-template"
+    },
+    "your-custom-server": {
+      "source": "github:your-org/your-mcp-server"
+    }
+  }
+}
 ```
 
 ## Development
@@ -310,8 +384,29 @@ npx wrangler tail
 ├── wrangler.jsonc           # Cloudflare Workers configuration
 ├── tsconfig.json            # TypeScript configuration
 ├── worker-configuration.d.ts # Generated type definitions
-└── mcp.json                 # MCP tools configuration
+├── mcp.json                 # MCP tools configuration
+├── .dev.vars                # Local environment variables
 ```
+
+### Available Scripts
+
+- `pnpm dev` - Start development server with MCP tools
+- `pnpm build` - Type check and dry-run deployment
+- `pnpm deploy` - Deploy to Cloudflare Workers
+- `pnpm start` - Start local development server (without MCP)
+- `pnpm cf-typegen` - Generate Cloudflare Workers types
+- `pnpm install` - Automatically installs MCP dependencies along with latest packages
+
+## Known Issues
+
+### MCP Service Shows "[not connected]" During Startup
+
+When running `pnpm dev`, you may see output like:
+```
+env.MCP_SERVICE (mcp)    Worker    local [not connected]
+```
+
+**This is expected behavior** and a Wrangler startup timing issue. The MCP service is actually connected and functional - you can verify this by testing the agent endpoints. The "[not connected]" status is misleading and doesn't affect functionality.
 
 ## Contributing
 
@@ -330,5 +425,6 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 For issues and questions:
 
 - Check the [Cloudflare Workers documentation](https://developers.cloudflare.com/workers/)
-- Review the [Xava Labs Agent SDK documentation](https://github.com/xava-labs/typescript-agent-framework)
+- Review the [Nullshot Agent SDK documentation](https://github.com/null-shot/agent-sdk)
+- Check the [AI SDK v5 documentation](https://sdk.vercel.ai/docs)
 - Open an issue in this repository
